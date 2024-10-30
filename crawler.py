@@ -3,10 +3,12 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import WebDriverException, NoSuchElementException, TimeoutException
 import time
 from datetime import datetime, timedelta
 import pandas as pd
+import re
+from unidecode import unidecode
 
 class Crawler:
     def __init__(self, url):
@@ -33,30 +35,51 @@ class Crawler:
         palavras_sem_resultados = []
 
         for palavra in palavras:
-            self._realizar_pesquisa(data_inicio, data_fim, palavra, dados, palavras_sem_resultados)
+            try:
+                self._realizar_pesquisa(data_inicio, data_fim, palavra, dados, palavras_sem_resultados)
+            except Exception as e:
+                print(f"Erro ao realizar pesquisa para '{palavra}': {e}")
 
-        self.salvar(dados, palavras_sem_resultados)
+            try:
+                self.salvar(dados, palavras_sem_resultados)
+            except Exception as e:
+                print(f"Erro ao salvar resultados: {e}")
 
     def _realizar_pesquisa(self, data_inicio, data_fim, palavra, dados, palavras_sem_resultados):
-        data_inicio_input = self.driver.find_element(By.ID, "publicationStartDate")
-        data_fim_input = self.driver.find_element(By.ID, "publicationEndDate")
-        data_inicio_input.clear()
-        data_fim_input.clear()
-        data_inicio_input.send_keys(data_inicio.strftime('%d/%m/%Y'))
-        data_fim_input.send_keys(data_fim.strftime('%d/%m/%Y'))
-        self.driver.find_element(By.TAG_NAME, 'body').click()  # Fecha o calendário
+        try:
+            data_inicio_input = self.driver.find_element(By.ID, "publicationStartDate")
+            data_fim_input = self.driver.find_element(By.ID, "publicationEndDate")
+            data_inicio_input.clear()
+            data_fim_input.clear()
+            data_inicio_input.send_keys(data_inicio.strftime('%d/%m/%Y'))
+            data_fim_input.send_keys(data_fim.strftime('%d/%m/%Y'))
+            self.driver.find_element(By.TAG_NAME, 'body').click()  # Fecha o calendário
+        except NoSuchElementException as e:
+            print(f"Erro ao configurar as datas para '{palavra}': {e}")
+            return
 
-        descricao_input = self.driver.find_element(By.ID, "description")
-        descricao_input.clear()
-        descricao_input.send_keys(palavra)
+        try:
+            descricao_input = self.driver.find_element(By.ID, "description")
+            descricao_input.clear()
+            descricao_input.send_keys(palavra)
+        except NoSuchElementException as e:
+            print(f"Erro ao inserir a palavra '{palavra}' na descrição: {e}")
+            return
 
-        WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "PsButton_pesquisar")))
-        self.driver.find_element(By.ID, "PsButton_pesquisar").click()
+        try:
+            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "PsButton_pesquisar")))
+            self.driver.find_element(By.ID, "PsButton_pesquisar").click()
+            time.sleep(2) # sleep para dar tempo a tabela carregar corretamente
+        except (TimeoutException, NoSuchElementException) as e:
+            print(f"Erro ao clicar no botão de pesquisa para '{palavra}': {e}")
+            return
 
-        time.sleep(2) # sleep para dar tempo a tabela carregar corretamente
-
-        WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "procurementsDatatable")))
-        table = self.driver.find_element(By.ID, "procurementsDatatable")
+        try:
+            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "procurementsDatatable")))
+            table = self.driver.find_element(By.ID, "procurementsDatatable")
+        except (TimeoutException, NoSuchElementException) as e:
+            print(f"Tabela de resultados não encontrada para '{palavra}': {e}")
+            return
 
         # Verifica se a tabela contém apenas uma linha com a mensagem de "sem resultados"
         rows = table.find_elements(By.XPATH, ".//tbody/tr")
@@ -69,6 +92,7 @@ class Crawler:
                 return
 
         header = [th.text for th in table.find_elements(By.XPATH, ".//thead/tr/th")]
+        header = [re.sub(r'[^\w]', '', unidecode(h)) for h in header]
 
         while True:
             rows = table.find_elements(By.XPATH, ".//tbody/tr")
@@ -80,11 +104,15 @@ class Crawler:
                     if header[i] == "Edital":
                         try:
                             link_element = cols[i].find_element(By.TAG_NAME, "a")
-                            row_data["Link Edital"] = link_element.get_attribute("href")
+                            row_data["LinkEdital"] = link_element.get_attribute("href")
                         except:
-                            row_data["Link Edital"] = None
+                            row_data["LinkEdital"] = None
 
-                    row_data[header[i]] = cols[i].text
+                    try:
+                        cell_text = cols[i].text.replace("\n", " ").strip()
+                        row_data[header[i]] = cell_text
+                    except IndexError:
+                        row_data[header[i]] = None
 
                 dados.append(row_data)
                 self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
@@ -94,20 +122,31 @@ class Crawler:
                 if "disabled" in next_button.get_attribute("class"):
                     break
                 next_button.click()
-                time.sleep(2)
+                time.sleep(2) # sleep para dar tempo a tabela carregar corretamente
             except Exception as e:
                 break
 
     def salvar(self, dados, palavras_sem_resultados):
-        df = pd.DataFrame(dados)
-        output_csv = 'resultado_pesquisa.csv'
-        df.to_csv(output_csv, index=False, encoding="utf-8-sig")
+        try:
+            df = pd.DataFrame(dados)
+            output_csv = 'resultado_pesquisa.csv'
+            df.to_csv(output_csv, index=False, encoding="utf-8-sig")
+            print("Resultados salvos com sucesso.")
+        except Exception as e:
+            print(f"Erro ao salvar dados CSV: {e}")
 
         if palavras_sem_resultados:
-            with open('sem_resultados.txt', 'w', encoding="utf-8-sig") as f:
-                for aviso in palavras_sem_resultados:
-                    f.write(aviso + "\n")
+            try:
+                with open('sem_resultados.txt', 'w', encoding="utf-8-sig") as f:
+                    for aviso in palavras_sem_resultados:
+                        f.write(aviso + "\n")
+                print("Palavras sem resultados salvas com sucesso.")
+            except Exception as e:
+                print(f"Erro ao salvar palavras sem resultados: {e}")   
 
     def fechar_driver(self):
-        if self.driver:
-            self.driver.quit()
+        try:
+            if self.driver:
+                self.driver.quit()
+        except Exception as e:
+            print(f"Erro ao fechar o driver: {e}")   
