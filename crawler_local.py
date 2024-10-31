@@ -10,7 +10,7 @@ import pandas as pd
 import re
 from unidecode import unidecode
 
-class Crawler:
+class Crawler_Local:
     def __init__(self, url):
         self.url = url
         self.service = Service(executable_path="chromedriver.exe")
@@ -119,6 +119,21 @@ class Crawler:
                     row_data["modalidade"] = cols[5].text.replace("\n", " ").strip()
                     row_data["descricao"] = cols[6].text.replace("\n", " ").strip()
                     row_data["data_abertura"] = cols[7].text.replace("\n", " ").strip() if len(cols) > 7 else None
+
+                    if row_data["link"]:
+                        self.driver.get(row_data["link"]) 
+                        time.sleep(1) 
+
+                        try:
+                            local_text = self.driver.find_element(By.XPATH, "//tr[th[contains(text(), 'Local')]]/td").text
+                            row_data["local"] = local_text.strip()    
+                        except Exception as e:
+                            print(f"Erro ao encontrar a classe 'local': {e}")
+                            row_data["local"] = None  
+
+                        self.driver.back()  
+                        time.sleep(2)  # Aguarda o carregamento da página de resultados novamente
+
                 except IndexError as e:
                     print(f"Erro ao acessar coluna: {e}")
                     continue  # Continue caso ocorra um erro
@@ -138,6 +153,8 @@ class Crawler:
     def salvar(self, dados, palavras_sem_resultados):
         try:
             df = pd.DataFrame(dados)
+            df["cidade"] = df["local"].apply(lambda x: x.split("-")[-2].strip() if pd.notna(x) else None)
+            df["estado"] = df["local"].apply(lambda x: x.split("-")[-1].strip() if pd.notna(x) else None)
             output_csv = 'resultado_pesquisa.csv'
             df.to_csv(output_csv, index=False, encoding="utf-8-sig")
             print("Resultados salvos com sucesso.")
