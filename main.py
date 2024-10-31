@@ -7,17 +7,17 @@ def main():
 
     palavras = ['Professor', 'palavra', 'escola']
     
-    '''crawler = Crawler(url)
+    crawler = Crawler(url)
     crawler.iniciar_driver()
     crawler.crawler(palavras)
     crawler.fechar_driver()
+    
     '''
-
     # crawler com Local
     crawler_local = Crawler_Local(url)
     crawler_local.iniciar_driver()
     crawler_local.crawler(palavras)
-    crawler_local.fechar_driver()
+    crawler_local.fechar_driver()'''
 
     # compartilhando no drive
     '''# Configurações para o upload do Google Drive

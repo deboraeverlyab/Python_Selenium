@@ -113,12 +113,12 @@ class Crawler_Local:
                 try:
                     row_data["central_compras"] = cols[0].text.replace("\n", " ").strip()  # Adapte o índice conforme a posição correta
                     row_data["processo"] = cols[1].text.replace("\n", " ").strip()
+                    row_data["numero"] = cols[2].text.replace("\n", " ").strip()
                     row_data["link"] = cols[2].find_element(By.TAG_NAME, "a").get_attribute("href") if len(cols) > 2 else None
-                    row_data["numero"] = cols[3].text.replace("\n", " ").strip()
-                    row_data["data_publicacao"] = cols[4].text.replace("\n", " ").strip()
-                    row_data["modalidade"] = cols[5].text.replace("\n", " ").strip()
-                    row_data["descricao"] = cols[6].text.replace("\n", " ").strip()
-                    row_data["data_abertura"] = cols[7].text.replace("\n", " ").strip() if len(cols) > 7 else None
+                    row_data["data_publicacao"] = cols[3].text.replace("\n", " ").strip()
+                    row_data["modalidade"] = cols[4].text.replace("\n", " ").strip()
+                    row_data["descricao"] = cols[5].text.replace("\n", " ").strip()
+                    row_data["data_abertura"] = cols[6].text.replace("\n", " ").strip() 
 
                     if row_data["link"]:
                         self.driver.get(row_data["link"]) 
