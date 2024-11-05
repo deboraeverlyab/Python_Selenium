@@ -3,7 +3,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import WebDriverException, NoSuchElementException, TimeoutException
+from selenium.common.exceptions import WebDriverException, NoSuchElementException, TimeoutException, StaleElementReferenceException
 import time
 from datetime import datetime, timedelta
 import pandas as pd
@@ -31,11 +31,13 @@ class Crawler_Local:
     def crawler(self, palavras):
         data_fim = datetime.today()
         data_inicio = data_fim - timedelta(days=90)
+        print('datas: ', data_inicio, data_fim)
         dados = []
         palavras_sem_resultados = []
 
         for palavra in palavras:
             try:
+                print(f"Palavra a ser buscada é: '{palavra}'")
                 self._realizar_pesquisa(data_inicio, data_fim, palavra, dados, palavras_sem_resultados)
             except Exception as e:
                 print(f"Erro ao realizar pesquisa para '{palavra}': {e}")
@@ -59,7 +61,7 @@ class Crawler_Local:
             return
 
         try:
-            descricao_input = self.driver.find_element(By.ID, "description")
+            descricao_input = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "description")))
             descricao_input.clear()
             descricao_input.send_keys(palavra)
         except NoSuchElementException as e:
@@ -67,42 +69,18 @@ class Crawler_Local:
             return
 
         try:
-            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "PsButton_pesquisar")))
-            self.driver.find_element(By.ID, "PsButton_pesquisar").click()
-            time.sleep(2) # sleep para dar tempo a tabela carregar corretamente
+            pesquisar_button = WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable((By.ID, "PsButton_pesquisar")))
+            pesquisar_button.click()
+            time.sleep(2)  # Temporário para aguardar a tabela carregar
         except (TimeoutException, NoSuchElementException) as e:
             print(f"Erro ao clicar no botão de pesquisa para '{palavra}': {e}")
             return
 
         try:
-            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "procurementsDatatable")))
-            table = self.driver.find_element(By.ID, "procurementsDatatable")
+            table = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "procurementsDatatable")))
         except (TimeoutException, NoSuchElementException) as e:
             print(f"Tabela de resultados não encontrada para '{palavra}': {e}")
             return
-
-        # Verifica se a tabela contém apenas uma linha com a mensagem de "sem resultados"
-        rows = table.find_elements(By.XPATH, ".//tbody/tr")
-        if len(rows) == 1:
-            single_cell = rows[0].find_elements(By.TAG_NAME, "td")
-            if len(single_cell) == 1 and "Não há editais" in single_cell[0].text:
-                aviso = f"Sem resultados para a palavra: {palavra}"
-                print(aviso)
-                palavras_sem_resultados.append(aviso)
-                return
-
-            # Cabeçalho fixo
-            header = [
-                "central_compras",
-                "processo",
-                "link",
-                "numero",
-                "data_publicacao",
-                "modalidade",
-                "descricao",
-                "data_abertura",
-                "local"
-            ]
 
         while True:
             rows = table.find_elements(By.XPATH, ".//tbody/tr")
@@ -111,7 +89,7 @@ class Crawler_Local:
                 row_data = {"termo": palavra}
 
                 try:
-                    row_data["central_compras"] = cols[0].text.replace("\n", " ").strip()  # Adapte o índice conforme a posição correta
+                    row_data["central_compras"] = cols[0].text.replace("\n", " ").strip()
                     row_data["processo"] = cols[1].text.replace("\n", " ").strip()
                     row_data["numero"] = cols[2].text.replace("\n", " ").strip()
                     row_data["link"] = cols[2].find_element(By.TAG_NAME, "a").get_attribute("href") if len(cols) > 2 else None
@@ -122,17 +100,21 @@ class Crawler_Local:
 
                     if row_data["link"]:
                         self.driver.get(row_data["link"]) 
-                        time.sleep(1) 
-
+                        time.sleep(2)  # Espera o conteúdo carregar
+                        
                         try:
-                            local_text = self.driver.find_element(By.XPATH, "//tr[th[contains(text(), 'Local')]]/td").text
-                            row_data["local"] = local_text.strip()    
+                            local_text = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.XPATH, "//tr[th[contains(text(), 'Local')]]/td"))).text
+                            row_data["local"] = local_text.strip()
                         except Exception as e:
                             print(f"Erro ao encontrar a classe 'local': {e}")
                             row_data["local"] = None  
 
-                        self.driver.back()  
-                        time.sleep(2)  # Aguarda o carregamento da página de resultados novamente
+                        # Volta para a página de resultados
+                        self.driver.back()
+
+                        # Re-localiza a tabela após a navegação para garantir que o DOM foi atualizado
+                        WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "procurementsDatatable")))
+                        table = self.driver.find_element(By.ID, "procurementsDatatable")  # Re-localiza a tabela
 
                 except IndexError as e:
                     print(f"Erro ao acessar coluna: {e}")
@@ -142,12 +124,13 @@ class Crawler_Local:
                 self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
 
             try:
-                next_button = self.driver.find_element(By.CLASS_NAME, "next")
-                if "disabled" in next_button.get_attribute("class"):
+                next_button = WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable((By.CLASS_NAME, "next")))
+                if "disabled" not in next_button.get_attribute("class"):
+                    next_button.click()
+                else:
                     break
-                next_button.click()
-                time.sleep(2) # sleep para dar tempo a tabela carregar corretamente
-            except Exception as e:
+                time.sleep(2)  # sleep para dar tempo a tabela carregar corretamente
+            except (TimeoutException, NoSuchElementException) as e:
                 break
 
     def salvar(self, dados, palavras_sem_resultados):
@@ -175,4 +158,4 @@ class Crawler_Local:
             if self.driver:
                 self.driver.quit()
         except Exception as e:
-            print(f"Erro ao fechar o driver: {e}")   
+            print(f"Erro ao fechar o driver: {e}") 

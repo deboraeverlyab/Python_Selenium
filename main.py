@@ -5,8 +5,9 @@ from googledriveuploader import GoogleDriveUploader
 def main():
     url = "https://www.compras.rs.gov.br/editais/pesquisar"
 
-    palavras = ['Professor', 'palavra', 'escola']
-    
+    #palavras = ['Professor', 'palavra', 'escola']
+    palavras = ['Saúde', 'Gestão', 'Gestor', 'Gerente', 'Monitoramento', 'Hospital', 'Hospitalar', 'Hospitalares', 'Medica', 'PCR', 'Clínica', 'Extração', 'IST']
+                   
     '''crawler = Crawler(url)
     crawler.iniciar_driver()
     crawler.crawler(palavras)
